@@ -1,0 +1,14 @@
+{
+  "name": "pcb-vectorize-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install-all": "npm install && cd pcb-mapper && npm install && cd ../backend-cloud-node && npm install",
+    "dev": "concurrently \"cd backend-cloud-node && npm start\" \"cd pcb-mapper && npm run dev-all\"",
+    "dev-backend": "cd backend-cloud-node && npm start",
+    "dev-frontend": "cd pcb-mapper && npm run dev-all"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
