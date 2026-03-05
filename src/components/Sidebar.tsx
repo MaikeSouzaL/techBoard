@@ -5,10 +5,17 @@ import { useMapperStore, COMP_TYPE_OPTIONS, COMP_TYPE_COLORS } from '@/store/use
 import { Search, Package, Plug } from 'lucide-react';
 
 export default function Sidebar() {
-  const {
-    selectedId, selectedPin, setSelectedPin, components, wires, isRoutingMode, searchQuery,
-    toggleRoutingMode, deleteSelected, setSearchQuery, selectItem,
-  } = useMapperStore();
+  const selectedId = useMapperStore(s => s.selectedId);
+  const selectedPin = useMapperStore(s => s.selectedPin);
+  const setSelectedPin = useMapperStore(s => s.setSelectedPin);
+  const components = useMapperStore(s => s.components);
+  const wires = useMapperStore(s => s.wires);
+  const isRoutingMode = useMapperStore(s => s.isRoutingMode);
+  const toggleRoutingMode = useMapperStore(s => s.toggleRoutingMode);
+  const deleteSelected = useMapperStore(s => s.deleteSelected);
+  const selectItem = useMapperStore(s => s.selectItem);
+  const searchQuery = useMapperStore(s => s.searchQuery);
+  const setSearchQuery = useMapperStore(s => s.setSearchQuery);
 
   const comp = components.find(c => c.id === selectedId);
 

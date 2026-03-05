@@ -282,14 +282,13 @@ export default function SvgCanvas({
   const handlePinMouseDown = useCallback((e: React.MouseEvent, pin: PinMarker) => {
     if (readOnly || !onPinMove) return;
     e.stopPropagation();
-    const svg = svgRef.current;
-    if (!svg) return;
-    const pt = svg.createSVGPoint();
-    pt.x = e.clientX; pt.y = e.clientY;
-    const vp = svg.querySelector('.svg-pan-zoom_viewport') as SVGGraphicsElement;
-    const ctm = vp?.getScreenCTM()?.inverse();
-    const svgPt = ctm ? pt.matrixTransform(ctm) : pt;
-    pinDragRef.current = { pinId: pin.id, startX: e.clientX, startY: e.clientY, origX: svgPt.x, origY: svgPt.y };
+    pinDragRef.current = { 
+        pinId: pin.id, 
+        startX: e.clientX, 
+        startY: e.clientY, 
+        origX: pin.svgX, 
+        origY: pin.svgY 
+    };
   }, [readOnly, onPinMove]);
 
 
@@ -305,16 +304,16 @@ export default function SvgCanvas({
         const pz = pzRef.current;
         if (!pz) return;
         const sizes = pz.getSizes();
-        const zoom = pz.getZoom();
-        // svg-pan-zoom: pan is in CSS-pixel offset of the SVG viewport origin.
-        // to center (svgX, svgY) in the container:
-        //   screenX = svgX * (sizes.width / sizes.viewBox.width) * zoom + panX
-        //   we want screenX = sizes.width / 2
-        const scaleX = (sizes.width / sizes.viewBox.width) * zoom;
-        const scaleY = (sizes.height / sizes.viewBox.height) * zoom;
-        const newPanX = sizes.width / 2 - pin.svgX * scaleX;
-        const newPanY = sizes.height / 2 - pin.svgY * scaleY;
-        pz.pan({ x: newPanX, y: newPanY });
+        if (!sizes) return;
+        
+        // Use realZoom which represents the actual CSS pixel to SVG unit ratio
+        const realZ = sizes.realZoom || 1;
+        const newPanX = sizes.width / 2 - pin.svgX * realZ;
+        const newPanY = sizes.height / 2 - pin.svgY * realZ;
+        
+        if (isFinite(newPanX) && isFinite(newPanY)) {
+          pz.pan({ x: newPanX, y: newPanY });
+        }
       } catch {
         // svg-pan-zoom not ready yet — ignore
       }
@@ -369,6 +368,27 @@ export default function SvgCanvas({
           hitLine.setAttribute('x1', String(w.points[i].x)); hitLine.setAttribute('y1', String(w.points[i].y));
           hitLine.setAttribute('x2', String(w.points[i+1].x)); hitLine.setAttribute('y2', String(w.points[i+1].y));
           hitLine.setAttribute('style', 'stroke:transparent;stroke-width:' + (50/zoom) + ';cursor:pointer;pointer-events:stroke;');
+          
+          hitLine.addEventListener('mousedown', (ev: Event) => {
+            const me = ev as MouseEvent;
+            me.stopPropagation();
+            if (store.getState().currentTool === 'select') {
+              let pt = { x: (w.points[i].x + w.points[i+1].x) / 2, y: (w.points[i].y + w.points[i+1].y) / 2 };
+              const svg = document.getElementById('mapping-svg') as object as SVGSVGElement;
+              if (svg) {
+                const svgPt = svg.createSVGPoint();
+                svgPt.x = me.clientX; svgPt.y = me.clientY;
+                const vp = svg.querySelector('.svg-pan-zoom_viewport') as SVGGraphicsElement;
+                const ctm = vp?.getScreenCTM();
+                if (ctm) {
+                  const tr = svgPt.matrixTransform(ctm.inverse());
+                  pt = { x: tr.x, y: tr.y };
+                }
+              }
+              store.getState().selectWire(w.id, pt);
+            }
+          });
+
           if (isRoutingMode) {
             hitLine.addEventListener('contextmenu', (ev: Event) => {
               ev.preventDefault();
@@ -822,19 +842,6 @@ export default function SvgCanvas({
           return;
         }
 
-        if (nod && s.isRoutingMode) {
-          // If in routing mode and clicked a node, start a new branch from this node
-          s.startWire({ 
-            id: 'W_' + Math.random().toString(36).substr(2, 5).toUpperCase(), 
-            points: [{ x: nod.x, y: nod.y }], 
-            sourceCompId: '', // Branches have no direct source comp initially
-            sourceNodeWireId: nod.wire.id,
-            sourceNodeIndex: nod.index,
-            net: nod.wire.net 
-          });
-          return;
-        }
-
         if (nod) {
           pendingNodeDragRef.current = { wireId: nod.wire.id, index: nod.index, startX: e.clientX, startY: e.clientY };
           return;
@@ -1061,11 +1068,10 @@ export default function SvgCanvas({
       if (!drag || !onPinMove) return;
       const dx = e.clientX - drag.startX;
       const dy = e.clientY - drag.startY;
-      // Convert pixel delta to SVG delta using the current viewport transform
-      const vp = svg.querySelector('.svg-pan-zoom_viewport') as SVGGraphicsElement;
-      const ctm = vp?.getScreenCTM();
-      const scale = ctm ? ctm.a : 1; // svg-pan-zoom scale factor
-      onPinMove(drag.pinId, drag.origX + dx / scale, drag.origY + dy / scale);
+      
+      const realZ = pzRef.current?.getSizes?.()?.realZoom || 1;
+      
+      onPinMove(drag.pinId, drag.origX + dx / realZ, drag.origY + dy / realZ);
     };
 
     const onPinMouseUp = () => { pinDragRef.current = null; };
@@ -1150,6 +1156,31 @@ export default function SvgCanvas({
     }
   }, [selectedImg, flipFront, flipBack, rotFront, rotBack]);
 
+  // Warp to a specific side and set it as active
+  const handleWarpToSide = useCallback((side: 'front' | 'back') => {
+    setSelectedImg(side);
+    useMapperStore.getState().setActiveSide(side);
+    
+    if (pzRef.current && imgDimsRef.current) {
+      const pz = pzRef.current;
+      const d = imgDimsRef.current;
+      const sizes = pz.getSizes();
+      const zoom = pz.getZoom();
+      
+      const targetY = side === 'front' ? d.h1 / 2 : d.img2Y + d.h2 / 2;
+      const targetX = side === 'front' ? d.w1 / 2 : d.w2 / 2;
+      
+      // Compute required pan (in css pixels) to hit target center
+      const scaleX = (sizes.width / sizes.viewBox.width) * zoom;
+      const scaleY = (sizes.height / sizes.viewBox.height) * zoom;
+      
+      const newPanX = sizes.width / 2 - targetX * scaleX;
+      const newPanY = sizes.height / 2 - targetY * scaleY;
+      
+      pz.pan({ x: newPanX, y: newPanY });
+    }
+  }, []);
+
   // Click handler — detect which image was clicked based on SVG Y coordinate
   const handleImageSelect = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     if (!currentImage2) return; // only one image, no need to select
@@ -1163,7 +1194,9 @@ export default function SvgCanvas({
     if (!ctm) return;
     const svgPt = pt.matrixTransform(ctm.inverse());
     const boundary = imgDimsRef.current.img2Y;
-    setSelectedImg(svgPt.y < boundary ? 'front' : 'back');
+    const side = svgPt.y < boundary ? 'front' : 'back';
+    setSelectedImg(side);
+    useMapperStore.getState().setActiveSide(side);
   }, [currentImage2]);
 
   // ── Tooltip: detect component/wire under mouse ─────────────────────────────
@@ -1263,8 +1296,8 @@ export default function SvgCanvas({
       {currentImage2 && (
         <div className="absolute top-3 left-3 z-[1000] flex items-center gap-2 bg-[#161921]/90 backdrop-blur-md rounded-lg border border-[#1e2030] px-3 py-1.5">
           <span className="text-[10px] font-black text-[#5c5f77] uppercase">Selecionada:</span>
-          <button onClick={() => setSelectedImg('front')} className={`px-2 py-0.5 rounded text-[10px] font-black transition-all ${selectedImg === 'front' ? 'bg-[#3b82f6] text-white' : 'text-[#5c5f77] hover:text-white'}`}>FRENTE</button>
-          <button onClick={() => setSelectedImg('back')} className={`px-2 py-0.5 rounded text-[10px] font-black transition-all ${selectedImg === 'back' ? 'bg-[#f59e0b] text-white' : 'text-[#5c5f77] hover:text-white'}`}>VERSO</button>
+          <button onClick={() => handleWarpToSide('front')} className={`px-2 py-0.5 rounded text-[10px] font-black transition-all ${selectedImg === 'front' ? 'bg-[#3b82f6] text-white' : 'text-[#5c5f77] hover:text-white'}`}>FRENTE</button>
+          <button onClick={() => handleWarpToSide('back')} className={`px-2 py-0.5 rounded text-[10px] font-black transition-all ${selectedImg === 'back' ? 'bg-[#f59e0b] text-white' : 'text-[#5c5f77] hover:text-white'}`}>VERSO</button>
         </div>
       )}
       <svg ref={svgRef} id="mapping-svg" className="w-full h-full"
@@ -1340,11 +1373,19 @@ export default function SvgCanvas({
       {/* ── Component/Wire Tooltip ── */}
       {tooltip && (
         <div
-          className="absolute z-[9999] pointer-events-none"
+          className="absolute z-[9999]"
           style={{
             left: Math.min(tooltip.x + 16, (svgRef.current?.getBoundingClientRect()?.right ?? window.innerWidth) - 280),
             top: Math.max(tooltip.y - 10, 0),
             transform: 'translateY(-100%)',
+          }}
+          onMouseEnter={(e) => {
+            e.stopPropagation();
+            if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
+          }}
+          onMouseLeave={() => {
+            if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
+            setTooltip(null);
           }}
         >
           <div className="bg-[#0d0f17]/95 backdrop-blur-md border border-[#2a2d3e] rounded-xl px-4 py-3 shadow-2xl min-w-[200px] max-w-[280px]">
@@ -1483,9 +1524,26 @@ export default function SvgCanvas({
 
               return (
                 <>
-                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-[#2a2d3e]">
-                    <div className="w-3 h-0.5 bg-cyan-400" />
-                    <span className="text-white font-black text-[13px]">Conexão</span>
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-[#2a2d3e] justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-0.5 bg-cyan-400" />
+                      <span className="text-white font-black text-[13px]">Conexão</span>
+                    </div>
+                    {!readOnly && (
+                       <button
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           if (confirm(`Excluir fio ${w.id}?`)) {
+                             store.getState().deleteWire(w.id);
+                             if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
+                             setTooltip(null);
+                           }
+                         }}
+                         className="flex items-center gap-1 text-[10px] bg-red-500/10 text-red-500 hover:bg-red-500/20 px-2 py-1 rounded transition-colors"
+                       >
+                         ✕ Excluir
+                       </button>
+                    )}
                   </div>
                   {w.net && (
                     <div className="flex items-center gap-2 mb-3">

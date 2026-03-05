@@ -59,7 +59,8 @@ export default function PcbEditorScreen() {
   const { userMode } = useAppStore();
   const [viewMode, setViewMode] = useState<ViewMode>(userMode === 'admin' ? 'edit' : 'preview');
   const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
-  const { selectedId, selectItem } = store();
+  const selectedId = store(s => s.selectedId);
+  const selectItem = store(s => s.selectItem);
 
   // Handle pin placement — SvgCanvas calls this with native SVG coords
   const handleBoardPinPlaced = useCallback((svgX: number, svgY: number) => {

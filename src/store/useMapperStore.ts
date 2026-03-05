@@ -94,6 +94,8 @@ interface MapperState {
   activeWire: Wire | null;
   hoveredAnchor: AnchorInfo | null;
   hoveredNode: NodeInfo | null;
+  selectedWireId: string | null;
+  wireClickPos: WirePoint | null;
 
   // Dragging existing component
   isDraggingComp: boolean;
@@ -112,6 +114,7 @@ interface MapperState {
   // Actions
   setTool: (tool: 'select' | 'rect' | 'circle') => void;
   selectItem: (id: string | null) => void;
+  selectWire: (id: string | null, pos?: WirePoint) => void;
   setSearchQuery: (q: string) => void;
   setHoveredAnchor: (anchor: AnchorInfo | null) => void;
   setHoveredNode: (node: NodeInfo | null) => void;
@@ -192,6 +195,8 @@ export const useMapperStore = create<MapperState>((set, get) => ({
   dragNodeWireId: null,
   dragNodeIndex: 0,
   hoveredWireId: null,
+  selectedWireId: null,
+  wireClickPos: null,
 
   setTool: (tool) => {
     if (get().isPreviewing) return;
@@ -201,6 +206,18 @@ export const useMapperStore = create<MapperState>((set, get) => ({
   selectItem: (id) => set({
     selectedId: id,
     selectedPin: null, // Clear selected pin when changing component
+    selectedWireId: null,
+    wireClickPos: null,
+    isRoutingMode: false,
+    hoveredAnchor: null,
+    hoveredNode: null,
+  }),
+
+  selectWire: (id, pos) => set({
+    selectedWireId: id,
+    wireClickPos: pos || null,
+    selectedId: null,
+    selectedPin: null,
     isRoutingMode: false,
     hoveredAnchor: null,
     hoveredNode: null,
@@ -334,13 +351,13 @@ export const useMapperStore = create<MapperState>((set, get) => ({
     // If we have a targetComp, we propagate nets from src and target
     if (targetComp) {
       const src = components.find(c => c.id === activeWire.sourceCompId);
-      if (!src) return;
-      const oldNet = src.net;
-      const newNet = targetComp.net || src.net || activeWire.net || ('NET_' + Math.random().toString(36).substr(2, 5).toUpperCase());
+      const oldNet = src?.net || activeWire.net;
+      const newNet = targetComp.net || oldNet || ('NET_' + Math.random().toString(36).substr(2, 5).toUpperCase());
       const finalW = { ...activeWire, targetCompId: targetComp.id, net: newNet };
+      
       set({
         components: components.map(c => {
-          if (c.id === src.id || c.id === targetComp.id) return { ...c, net: newNet };
+          if (c.id === targetComp.id || (src && c.id === src.id)) return { ...c, net: newNet };
           if (oldNet && c.net === oldNet) return { ...c, net: newNet };
           return c;
         }),
@@ -357,15 +374,16 @@ export const useMapperStore = create<MapperState>((set, get) => ({
       // activeWire has already been updated with correct 'net' inside SvgCanvas
       const src = components.find(c => c.id === activeWire.sourceCompId);
       const newNet = activeWire.net;
-      const oldNet = src?.net;
+      const oldNet = src?.net || activeWire.net;
+      
       set({
         activeWire: null,
         isWiring: false,
-        components: src ? components.map(c => {
-           if (c.id === src.id) return { ...c, net: newNet };
+        components: components.map(c => {
+           if (src && c.id === src.id) return { ...c, net: newNet };
            if (oldNet && c.net === oldNet) return { ...c, net: newNet };
            return c;
-        }) : components,
+        }),
         wires: wires.map(w => {
            if (w.id === activeWire.id) return activeWire;
            if (oldNet && w.net === oldNet) return { ...w, net: newNet };
