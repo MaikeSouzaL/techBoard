@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-bg-deep: #0a0a0f;
+  --color-bg-panel: #12121a;
+  --color-bg-card: #1a1a28;
+  --color-accent: #00e5ff;
+  --color-accent-dim: #00b8d4;
+  --color-gold: #ffc107;
+  --color-success: #00e676;
+  --color-danger: #ff5252;
+  --color-text: #e8e8f0;
+  --color-text-dim: #8888aa;
+  --color-border: #2a2a3a;
+  --color-input-bg: #1e1e2e;
+  --color-glass: rgba(18, 18, 26, 0.75);
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+}
+
+body, html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  background: var(--color-bg-deep);
+  color: var(--color-text);
+}
+
+/* SVG Component Styles */
+.comp { pointer-events: all; }
+
+.comp-selected {
+  stroke: #ff4444 !important;
+  stroke-width: 4 !important;
+  fill: rgba(255, 68, 68, 0.15) !important;
+  filter: drop-shadow(0 0 12px rgba(255, 68, 68, 0.6));
+}
+
+.net-highlight {
+  stroke: var(--color-accent) !important;
+  stroke-width: 4 !important;
+  fill: rgba(0, 229, 255, 0.25) !important;
+  filter: drop-shadow(0 0 15px var(--color-accent));
+}
+
+@keyframes pulse-cyan {
+  0%, 100% { filter: drop-shadow(0 0 3px var(--color-accent)); }
+  50% { filter: drop-shadow(0 0 14px var(--color-accent)); }
+}
+
+.anchor-active { animation: pulse-cyan 1.2s ease-in-out infinite; }
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-in { animation: fade-in 0.2s ease-out; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-accent-dim); }
+
+/* Glass effect utility */
+.glass {
+  background: var(--color-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
